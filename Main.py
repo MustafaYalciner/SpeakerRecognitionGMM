@@ -1,7 +1,9 @@
 import pandas as pd
 import numpy as np
 import sklearn
+from pandas import DataFrame
 from sklearn.mixture import GaussianMixture
+import matplotlib.pyplot as plt
 
 
 class Main:
@@ -10,21 +12,47 @@ class Main:
         print("Hello World")
         data = pd.read_csv('data/features_no_txt.csv')
         data = data.drop(columns=['Filename'])
-        train, development, test = np.split(data.sample(frac=1), [int(.6 * len(data)), int(.8 * len(data))])
-        # First find out the optimum number of components using the development set.
-        development_target = development[['Label']]
-        development_given = development.drop(columns=['Label'])
-        componentCount = 5
-        isModelImproving = True
-        # while isModelImproving:
-#        gmm = GaussianMixture(n_components=componentCount, covariance_type='full', random_state=42)
+        dataGrouped = data.groupby('Label')
+        users = data['Label'].unique()
+        subjects = [DataFrame()] * 10
+        lastIndex = 0
+        for user in users:
+            subjects[lastIndex] = data.loc[data['Label'] == user]
+            print(subjects[lastIndex])
+            lastIndex = lastIndex+1
+        # The array 'subjects' now contains the rows for each subject in separate fields
 
-        gmm = GaussianMixture()
+        # Drop the Labels since they are now identified by their indices.
+        for index in range(len(subjects)):
+            subjects[index] = subjects[index].drop(columns=['Label'])
 
-        gmm.fit(X=development_given, y=development_target)
+        # The rows for each subject will be divided into three sets for training development and test.
+        subjectsSplit = [subjects] * 3
+        for i in range(len(subjects)):
+            train, development, test \
+                = np.split(subjects[i].sample(frac=1), [int(.6 * len(subjects[i])), int(.8 * len(subjects[i]))])
+            subjectsSplit[0][i] = train
+            subjectsSplit[1][i] = development
+            subjectsSplit[2][i] = test
+        models = [GaussianMixture()] * len(subjects)
+        for index in range(len(subjects)):
+            componentNumber = 1
+            gmm = GaussianMixture(n_components=componentNumber)
+            gmm.fit(subjectsSplit[0][0])
+            lastBic = gmm.bic(subjectsSplit[0][0])
+            currentBic = lastBic-1
+            while lastBic > currentBic:
+                componentNumber += 1
+                gmm = GaussianMixture(n_components=componentNumber)
+                gmm.fit(subjectsSplit[0][0])
+                lastBic = currentBic
+                currentBic = gmm.bic(subjectsSplit[1][0])
+            print('Number of components for user - is -')
+            print(index)
+            print(componentNumber)
 
-        gmm = gmm.bic(X=development_given)
 
-        target = data[['Label']]
-        features = data.drop(columns=['Label'])
-        # print(data)
+
+
+
+
