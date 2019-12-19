@@ -34,22 +34,30 @@ class Main:
             subjectsSplit[0][i] = train
             subjectsSplit[1][i] = development
             subjectsSplit[2][i] = test
+
+        # Calculate the number of GMM models for each subject independently and save them in an array.
         models = [GaussianMixture()] * len(subjects)
         for index in range(len(subjects)):
             componentNumber = 1
             gmm = GaussianMixture(n_components=componentNumber)
-            gmm.fit(subjectsSplit[0][0])
-            lastBic = gmm.bic(subjectsSplit[0][0])
+            gmm.fit(subjectsSplit[0][index])
+            lastBic = gmm.bic(subjectsSplit[1][index])
             currentBic = lastBic-1
             while lastBic > currentBic:
                 componentNumber += 1
                 gmm = GaussianMixture(n_components=componentNumber)
-                gmm.fit(subjectsSplit[0][0])
+                gmm.fit(subjectsSplit[0][index])
                 lastBic = currentBic
-                currentBic = gmm.bic(subjectsSplit[1][0])
+                currentBic = gmm.bic(subjectsSplit[1][index])
             print('Number of components for user - is -')
             print(index)
             print(componentNumber)
+#            print(gmm.score(X=subjectsSplit[2][index]))
+#            print('separator')
+            print(gmm.score(X=subjectsSplit[2][3]))
+            print('separator')
+            #print(gmm.(X=subjectsSplit[2][max(index-1, 0)]))
+#            print(gmm.predict_proba(X=subjectsSplit[2][0]))
 
 
 
