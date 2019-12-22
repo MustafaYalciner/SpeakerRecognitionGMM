@@ -43,13 +43,56 @@ def operation_on_each_element(matrix, lmd):
                     matrix[i][j][k] = lmd(matrix[i][j][k])
     return matrix
 
+
+def calculate_EER_on_normalized_matrix(matrix):
+    upper_bound = 1
+    lower_bound = 0
+    while (upper_bound-lower_bound) > 0.001:
+        t_hold = (upper_bound+lower_bound)/2
+        acceptedAndGen = 0
+        acceptedAndImpo = 0
+        rejectedAndGen=0
+        rejectedAndImpo=0
+        far = 0
+        frr = 0
+        for s in range(len(matrix)):
+            for r in range(len(matrix[s])):
+                for m in range(len(matrix[s][r])):
+                    if matrix[s][r][m] is not None:
+                        if matrix[s][r][m] < t_hold:
+                            if s == m:
+                                rejectedAndGen += 1
+                            else:
+                                rejectedAndImpo +=1
+                        if matrix[s][r][m] >= t_hold:
+                            if s == m:
+                                acceptedAndGen += 1
+                            else:
+                                acceptedAndImpo += 1
+
+        far = acceptedAndImpo / (acceptedAndImpo+rejectedAndImpo)
+        frr = rejectedAndGen / (rejectedAndGen + acceptedAndGen)
+        if far > frr:
+            lower_bound = t_hold
+        elif far < frr:
+            upper_bound = t_hold
+        else:
+            break
+    return far, frr
+
+
+
+
+
 def calculate_EER(models, developmentSet):
     sim_matrix = calculate_sim_matrix(models, developmentSet)
     minimum_entry = find_min(sim_matrix)
-    sim_matrix = operation_on_each_element(sim_matrix,lambda a : a-minimum_entry)
+    sim_matrix = operation_on_each_element(sim_matrix, lambda a : a-minimum_entry)
     maximum_entry = find_max(sim_matrix)
     sim_matrix = operation_on_each_element(sim_matrix, lambda a : a/maximum_entry)
-    return sim_matrix
+    far, frr = calculate_EER_on_normalized_matrix(sim_matrix)
+    return far, frr
+
 
 def calculate_sim_matrix(models, developmentSet):
     max_row = 0
@@ -94,22 +137,23 @@ class Main:
             best_component_number = 1
             best_EER = 1
             is_eer_decreasing = True
-            componentNumber = 1
+            componentNumber = 0
             while is_eer_decreasing:
+                componentNumber += 1
                 for index in range(len(subjects)):
                     gmm = GaussianMixture(n_components=componentNumber)
                     gmm.fit(subjectsSplit[0][index])
                     models[index] = gmm
-                componentNumber += 1
-                eer = calculate_EER(models, subjectsSplit[1])
-                is_eer_decreasing = False
+                far, frr = calculate_EER(models, subjectsSplit[1])
 
-            #Calculate the similarity matrix
-            print('Number of components for user - is -')
-            print(index)
+                if best_EER > ((far+frr)/2):
+                    best_EER = ((far+frr)/2)
+                    is_eer_decreasing = True
+                else:
+                    is_eer_decreasing = False
+            print('ideal number of components for fold - is -:')
+            print(experiment_count)
             print(componentNumber)
-
-            print('separator')
 #       According to sklearn documentation, the GMM here already uses the Mahalanobis distance by default
 #       https://scikit-learn.org/stable/modules/clustering.html
 
