@@ -49,6 +49,46 @@ def operation_on_each_element(matrix, lmd):
                     matrix[i][j][k] = lmd(matrix[i][j][k])
     return matrix
 
+def calculate_user_dependent_scores(matrix):
+    lower_bounds = [0] * len(matrix)
+    upper_bounds = [1] * len(matrix)
+    thresholds = [0.5] * len(matrix)
+    far = [None] * len(matrix)
+    frr = [None] * len(matrix)
+    approximation_steps = 0
+    while approximation_steps < 30:
+        acceptedAndGen = [None] * len(matrix)
+        acceptedAndImpo = [None] * len(matrix)
+        rejectedAndGen = [None] * len(matrix)
+        rejectedAndImpo = [None] * len(matrix)
+        for s in range(len(matrix)):
+            for r in range(len(matrix[s])):
+                for m in range(len(matrix[s][r])):
+                    if matrix[s][r][m] is not None:
+                        if matrix[s][m][r] < thresholds[s]:
+                            if s == m:
+                                rejectedAndGen[s] += 1
+                            else:
+                                rejectedAndImpo[s] += 1
+                        else:
+                            if s == m:
+                                acceptedAndGen[s] += 1
+                            else:
+                                acceptedAndImpo[s] += 1
+            far[s] = acceptedAndImpo[s] / (acceptedAndImpo[s] + rejectedAndImpo[s])
+            frr[s] = rejectedAndGen[s] / (rejectedAndGen[s] + acceptedAndGen[s])
+            if far[s] > frr[s]:
+                lower_bounds[s] = thresholds[s]
+                thresholds[s] = (upper_bounds[s]+lower_bounds[s])/2
+            elif far[s] < frr[s]:
+                upper_bounds[s] = thresholds[s]
+                thresholds[s] = (upper_bounds[s]+lower_bounds[s])/2
+        approximation_steps += 1
+    return far, frr
+
+
+
+
 
 def calculate_EER_on_normalized_matrix(matrix):
     upper_bound = 1
@@ -59,8 +99,6 @@ def calculate_EER_on_normalized_matrix(matrix):
         acceptedAndImpo = 0
         rejectedAndGen = 0
         rejectedAndImpo = 0
-        far = 0
-        frr = 0
         for s in range(len(matrix)):
             for r in range(len(matrix[s])):
                 for m in range(len(matrix[s][r])):
@@ -156,9 +194,25 @@ def second_section(models, subjects, subjectsSplit):
             eer_increased_n_times = 0
         else:
             eer_increased_n_times += 1
-        n_components_ubm += 1
         print('EER:', (far + frr) / 2, ' components: ', n_components_ubm)
+        n_components_ubm += 1
     print('best no of components: ', best_n_components_ubm)
+
+def hter_user_dependent_thold(best_models, testset):
+    print('')
+
+def hter_user_independent_thold(best_models, testset):
+    print('')
+
+
+def test_models_for_report_first_section(best_models, testset): # testset contains the test data for each subject [0..9]
+    print('')
+    # eer on the development set and aver hter on the test set along with standart deviations.
+    #                                                                       -> s d also for development?
+    # everything client specific and client independent.
+
+
+
 
 class Main: #first section
     if __name__ == '__main__':
@@ -209,6 +263,7 @@ class Main: #first section
                 else:
                     eer_increased_n_times += 1
                 print('EER:', (far + frr) / 2, ' fold: ', experiment_count, ' components: ', componentNumber)
+            test_models_for_report_first_section(best_models, subjectsSplit[2])
             second_section(best_models,subjects, subjectsSplit)
                 # print('Bic_sum',bic_sum/10,' fold: ', experiment_count,' components: ',componentNumber)
 
