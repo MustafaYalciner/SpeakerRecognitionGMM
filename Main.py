@@ -122,7 +122,7 @@ def calculate_EER_on_normalized_matrix(matrix):
             upper_bound = t_hold
         else:
             break
-    return far, frr
+    return (far+frr)/2
 
 def calculate_sim_matrix(models, developmentSet):
     max_row = 0
@@ -139,14 +139,13 @@ def calculate_sim_matrix(models, developmentSet):
                 sim_matrix[s][r][m] = per_sample_similarities[r]
     return sim_matrix
 
-def calculate_EER(models, developmentSet):
+def calculate_similarity_matrix(models, developmentSet):
     sim_matrix = calculate_sim_matrix(models, developmentSet)
     minimum_entry = find_min(sim_matrix)
     sim_matrix = operation_on_each_element(sim_matrix, lambda a: a - minimum_entry)
     maximum_entry = find_max(sim_matrix)
     sim_matrix = operation_on_each_element(sim_matrix, lambda a: a / maximum_entry)
-    far, frr = calculate_EER_on_normalized_matrix(sim_matrix)
-    return far, frr
+    return sim_matrix
 
 
 
@@ -186,15 +185,15 @@ def second_section(models, subjects, subjectsSplit):
             print('Error, no of fore and background models are unequal')
         for i in range(len(models)):
             merged_models[i] = FusionedModel(models[i],ubm_models[i])
-        far, frr = calculate_EER(merged_models, subjectsSplit[1])
-        if best_EER > ((far + frr) / 2):
-            best_EER = ((far + frr) / 2)
+        current_eer = calculate_EER_on_normalized_matrix(calculate_similarity_matrix(merged_models, subjectsSplit[1]))
+        if best_EER > current_eer:
+            best_EER = current_eer
             best_models = copy.deepcopy(merged_models)
             best_n_components_ubm = n_components_ubm
             eer_increased_n_times = 0
         else:
             eer_increased_n_times += 1
-        print('EER:', (far + frr) / 2, ' components: ', n_components_ubm)
+        print('EER:', current_eer, ' components: ', n_components_ubm)
         n_components_ubm += 1
     print('best no of components: ', best_n_components_ubm)
 
@@ -240,6 +239,7 @@ class Main: #first section
             best_component_number = 1
             best_EER = 1
             best_models = [None] * len(subjects)
+            best_component_number = 1
             eer_increased_n_times = 0
             componentNumber = 0
 
@@ -254,15 +254,17 @@ class Main: #first section
                     gmm.fit(subjectsSplit[0][index])
                     models[index] = gmm
                 #                    bic_sum += models[index].bic(subjectsSplit[0][index])
-                far, frr = calculate_EER(models, subjectsSplit[1])
+                current_eer = calculate_EER_on_normalized_matrix(calculate_similarity_matrix(models, subjectsSplit[1]))
 
-                if best_EER > ((far + frr) / 2):
-                    best_EER = ((far + frr) / 2)
+                if best_EER > current_eer:
+                    best_EER = current_eer
                     best_models = copy.deepcopy(models)
+                    best_component_number = componentNumber
                     eer_increased_n_times = 0
                 else:
                     eer_increased_n_times += 1
-                print('EER:', (far + frr) / 2, ' fold: ', experiment_count, ' components: ', componentNumber)
+                print('EER:', current_eer, ' fold: ', experiment_count, ' components: ', componentNumber)
+            print('Optimum no of components for the foreground model: ',best_component_number)
             test_models_for_report_first_section(best_models, subjectsSplit[2])
             second_section(best_models,subjects, subjectsSplit)
                 # print('Bic_sum',bic_sum/10,' fold: ', experiment_count,' components: ',componentNumber)
