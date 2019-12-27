@@ -6,16 +6,20 @@ from pandas import DataFrame
 from sklearn.mixture import GaussianMixture
 import matplotlib.pyplot as plt
 
+from FusionedModel import FusionedModel
+
 
 def shuffle_split_data(subjects):
-    subjectsSplit = [[None]*len(subjects)]*3
+    subjectsSplit = [[None] * len(subjects)] * 3
     for i in range(len(subjects)):
         train, development, test \
             = np.split(subjects[i].sample(frac=1), [int(.6 * len(subjects[i])), int(.8 * len(subjects[i]))])
+        # frac = 1 ensures that the data set is shuffled
         subjectsSplit[0][i] = train
         subjectsSplit[1][i] = development
         subjectsSplit[2][i] = test
     return subjectsSplit
+
 
 def find_min(matrix):
     min = matrix[0][0][0]
@@ -26,6 +30,7 @@ def find_min(matrix):
                     min = matrix[i][j][k]
     return min
 
+
 def find_max(matrix):
     max = matrix[0][0][0]
     for i in range(len(matrix)):
@@ -34,6 +39,7 @@ def find_max(matrix):
                 if (matrix[i][j][k] is not None) and (matrix[i][j][k] > max):
                     max = matrix[i][j][k]
     return max
+
 
 def operation_on_each_element(matrix, lmd):
     for i in range(len(matrix)):
@@ -47,12 +53,12 @@ def operation_on_each_element(matrix, lmd):
 def calculate_EER_on_normalized_matrix(matrix):
     upper_bound = 1
     lower_bound = 0
-    while (upper_bound-lower_bound) > 0.001:
-        t_hold = (upper_bound+lower_bound)/2
+    while (upper_bound - lower_bound) > 0.001:
+        t_hold = (upper_bound + lower_bound) / 2
         acceptedAndGen = 0
         acceptedAndImpo = 0
-        rejectedAndGen=0
-        rejectedAndImpo=0
+        rejectedAndGen = 0
+        rejectedAndImpo = 0
         far = 0
         frr = 0
         for s in range(len(matrix)):
@@ -63,14 +69,14 @@ def calculate_EER_on_normalized_matrix(matrix):
                             if s == m:
                                 rejectedAndGen += 1
                             else:
-                                rejectedAndImpo +=1
+                                rejectedAndImpo += 1
                         if matrix[s][r][m] >= t_hold:
                             if s == m:
                                 acceptedAndGen += 1
                             else:
                                 acceptedAndImpo += 1
 
-        far = acceptedAndImpo / (acceptedAndImpo+rejectedAndImpo)
+        far = acceptedAndImpo / (acceptedAndImpo + rejectedAndImpo)
         frr = rejectedAndGen / (rejectedAndGen + acceptedAndGen)
         if far > frr:
             lower_bound = t_hold
@@ -80,27 +86,13 @@ def calculate_EER_on_normalized_matrix(matrix):
             break
     return far, frr
 
-
-
-
-
-def calculate_EER(models, developmentSet):
-    sim_matrix = calculate_sim_matrix(models, developmentSet)
-    minimum_entry = find_min(sim_matrix)
-    sim_matrix = operation_on_each_element(sim_matrix, lambda a : a-minimum_entry)
-    maximum_entry = find_max(sim_matrix)
-    sim_matrix = operation_on_each_element(sim_matrix, lambda a : a/maximum_entry)
-    far, frr = calculate_EER_on_normalized_matrix(sim_matrix)
-    return far, frr
-
-
 def calculate_sim_matrix(models, developmentSet):
     max_row = 0
     for data_frame in developmentSet:
         if max_row < len(data_frame):
             max_row = len(data_frame)
 
-    sim_matrix = [[[None]*len(models)]*max_row]*len(developmentSet)
+    # sim_matrix = [[[None] * len(models)] * max_row] * len(developmentSet)
     sim_matrix = [[[None for k in range(len(models))] for j in range(max_row)] for i in range(len(developmentSet))]
     for m in range(len(models)):
         for s in range(len(developmentSet)):
@@ -109,11 +101,68 @@ def calculate_sim_matrix(models, developmentSet):
                 sim_matrix[s][r][m] = per_sample_similarities[r]
     return sim_matrix
 
+def calculate_EER(models, developmentSet):
+    sim_matrix = calculate_sim_matrix(models, developmentSet)
+    minimum_entry = find_min(sim_matrix)
+    sim_matrix = operation_on_each_element(sim_matrix, lambda a: a - minimum_entry)
+    maximum_entry = find_max(sim_matrix)
+    sim_matrix = operation_on_each_element(sim_matrix, lambda a: a / maximum_entry)
+    far, frr = calculate_EER_on_normalized_matrix(sim_matrix)
+    return far, frr
 
-class Main:
+
+
+def concat_background_data(user_index, user_divided_data):
+    concated_data = pd.DataFrame()
+    for i in range(len(user_divided_data)):
+        if i != user_index:
+            concated_data = concated_data.append(user_divided_data)
+    return concated_data
+
+def merge_background_data(user_divided_data):
+    background_data = [None] * len(user_divided_data)
+    for user_index in range(len(background_data)):
+        background_data[user_index] = concat_background_data(user_index, user_divided_data)
+    return background_data
+
+# the subjects contain all the data for each subject in the array.
+def second_section(models, subjects, subjectsSplit):
+    # subjectsSplit: for each in (train, develop, test) -> for each user -> subset of data for that user and for that purpose.
+    ubm_models = [None] * len(subjects)
+    merged_models = [None] * len(subjects)
+    ubm_best_component_no = 1
+    # Since we are using almost the whole dataset (except for the subject of interest s_i)
+    # it would probably not make a big difference if we used subject specific number of components.
+    n_components_ubm = 1
+    best_n_components_ubm = 1
+    best_EER = 1
+    best_models = [None] * len(subjects)
+    background_data_train = merge_background_data(subjectsSplit[0])
+    eer_increased_n_times = 0
+# wrong because background_data_development = merge_background_data(subjectsSplit[1])
+    while eer_increased_n_times < 3:
+        for user_index in range(len(subjects)):
+            ubm_models[user_index] = GaussianMixture(n_components=n_components_ubm)
+            ubm_models[user_index].fit(background_data_train[user_index])
+        if len(models) != len(ubm_models):
+            print('Error, no of fore and background models are unequal')
+        for i in range(len(models)):
+            merged_models[i] = FusionedModel(models[i],ubm_models[i])
+        far, frr = calculate_EER(merged_models, subjectsSplit[1])
+        if best_EER > ((far + frr) / 2):
+            best_EER = ((far + frr) / 2)
+            best_models = copy.deepcopy(merged_models)
+            best_n_components_ubm = n_components_ubm
+            eer_increased_n_times = 0
+        else:
+            eer_increased_n_times += 1
+        n_components_ubm += 1
+        print('EER:', (far + frr) / 2, ' components: ', n_components_ubm)
+    print('best no of components: ', best_n_components_ubm)
+
+class Main: #first section
     if __name__ == '__main__':
         # We will calculate a similarity matrix similar to the first assignment.
-        print("Hello World")
         data = pd.read_csv('data/features_no_txt.csv')
         data = data.drop(columns=['Filename'])
         dataGrouped = data.groupby('Label')
@@ -122,7 +171,7 @@ class Main:
         lastIndex = 0
         for user in users:
             subjects[lastIndex] = data.loc[data['Label'] == user]
-            lastIndex = lastIndex+1
+            lastIndex = lastIndex + 1
         # The array 'subjects' now contains the rows for each subject in separate fields
 
         # Drop the Labels since they are now identified by their indices.
@@ -136,26 +185,36 @@ class Main:
             models = [None] * len(subjects)
             best_component_number = 1
             best_EER = 1
-            is_eer_decreasing = True
+            best_models = [None] * len(subjects)
+            eer_increased_n_times = 0
             componentNumber = 0
-            while is_eer_decreasing:
+
+            # Even though we may not find the global minimum eer, some experiments have shown that
+            # we are reaching a good eer with this approach.
+            # The EER is fluctuating alot for a very high number of components.
+            while eer_increased_n_times < 3 or componentNumber >100: # provide an upper bound to make sure the loop terminates
                 componentNumber += 1
+                bic_sum = 0
                 for index in range(len(subjects)):
-                    gmm = GaussianMixture(n_components=componentNumber)
+                    gmm = GaussianMixture(n_components=componentNumber, n_init=1)
                     gmm.fit(subjectsSplit[0][index])
                     models[index] = gmm
+                #                    bic_sum += models[index].bic(subjectsSplit[0][index])
                 far, frr = calculate_EER(models, subjectsSplit[1])
 
-                if best_EER > ((far+frr)/2):
-                    best_EER = ((far+frr)/2)
-                    is_eer_decreasing = True
+                if best_EER > ((far + frr) / 2):
+                    best_EER = ((far + frr) / 2)
+                    best_models = copy.deepcopy(models)
+                    eer_increased_n_times = 0
                 else:
-                    is_eer_decreasing = False
-            print('ideal number of components for fold - is -:')
-            print(experiment_count)
-            print(componentNumber)
+                    eer_increased_n_times += 1
+                print('EER:', (far + frr) / 2, ' fold: ', experiment_count, ' components: ', componentNumber)
+            second_section(best_models,subjects, subjectsSplit)
+                # print('Bic_sum',bic_sum/10,' fold: ', experiment_count,' components: ',componentNumber)
+
+
+
+
+
 #       According to sklearn documentation, the GMM here already uses the Mahalanobis distance by default
 #       https://scikit-learn.org/stable/modules/clustering.html
-
-
-
