@@ -49,6 +49,7 @@ def operation_on_each_element(matrix, lmd):
                     matrix[i][j][k] = lmd(matrix[i][j][k])
     return matrix
 
+
 def calculate_user_dependent_scores(matrix):
     lower_bounds = [0] * len(matrix)
     upper_bounds = [1] * len(matrix)
@@ -85,10 +86,6 @@ def calculate_user_dependent_scores(matrix):
                 thresholds[s] = (upper_bounds[s]+lower_bounds[s])/2
         approximation_steps += 1
     return far, frr
-
-
-
-
 
 def calculate_EER_on_normalized_matrix(matrix):
     upper_bound = 1
@@ -139,15 +136,13 @@ def calculate_sim_matrix(models, developmentSet):
                 sim_matrix[s][r][m] = per_sample_similarities[r]
     return sim_matrix
 
-def calculate_similarity_matrix(models, developmentSet):
+def calculate_normalized_similarity_matrix(models, developmentSet):
     sim_matrix = calculate_sim_matrix(models, developmentSet)
     minimum_entry = find_min(sim_matrix)
     sim_matrix = operation_on_each_element(sim_matrix, lambda a: a - minimum_entry)
     maximum_entry = find_max(sim_matrix)
     sim_matrix = operation_on_each_element(sim_matrix, lambda a: a / maximum_entry)
     return sim_matrix
-
-
 
 def concat_background_data(user_index, user_divided_data):
     concated_data = pd.DataFrame()
@@ -185,7 +180,7 @@ def second_section(models, subjects, subjectsSplit):
             print('Error, no of fore and background models are unequal')
         for i in range(len(models)):
             merged_models[i] = FusionedModel(models[i],ubm_models[i])
-        current_eer = calculate_EER_on_normalized_matrix(calculate_similarity_matrix(merged_models, subjectsSplit[1]))
+        current_eer = calculate_EER_on_normalized_matrix(calculate_normalized_similarity_matrix(merged_models, subjectsSplit[1]))
         if best_EER > current_eer:
             best_EER = current_eer
             best_models = copy.deepcopy(merged_models)
@@ -197,20 +192,11 @@ def second_section(models, subjects, subjectsSplit):
         n_components_ubm += 1
     print('best no of components: ', best_n_components_ubm)
 
-def hter_user_dependent_thold(best_models, testset):
-    print('')
 
-def hter_user_independent_thold(best_models, testset):
-    print('')
-
-
-def test_models_for_report_first_section(best_models, testset): # testset contains the test data for each subject [0..9]
-    print('')
-    # eer on the development set and aver hter on the test set along with standart deviations.
-    #                                                                       -> s d also for development?
-    # everything client specific and client independent.
-
-
+def client_specific_hter(best_models, testset): # testset contains the test data for each subject [0..9]
+    sim_matrix = calculate_normalized_similarity_matrix()
+    far, frr = calculate_user_dependent_scores(sim_matrix)
+    return (far+frr)/2
 
 
 class Main: #first section
@@ -230,8 +216,12 @@ class Main: #first section
         # Drop the Labels since they are now identified by their indices.
         for index in range(len(copy.deepcopy(subjects))):
             subjects[index] = subjects[index].drop(columns=['Label'])
-
         # The rows for each subject will be divided into three sets for training development and test.
+        eer_development_set = [[None]*len(subjects)]*5
+        client_specific_hter_values = [[None] * len(subjects)] * 5
+        hter_test_set_user_independent = [[None]*len(subjects)]*5
+
+
         for experiment_count in range(5):
             subjectsSplit = shuffle_split_data(subjects)
             # Calculate the number of GMM models for each subject independently and save them in an array.
@@ -254,7 +244,7 @@ class Main: #first section
                     gmm.fit(subjectsSplit[0][index])
                     models[index] = gmm
                 #                    bic_sum += models[index].bic(subjectsSplit[0][index])
-                current_eer = calculate_EER_on_normalized_matrix(calculate_similarity_matrix(models, subjectsSplit[1]))
+                current_eer = calculate_EER_on_normalized_matrix(calculate_normalized_similarity_matrix(models, subjectsSplit[1]))
 
                 if best_EER > current_eer:
                     best_EER = current_eer
@@ -265,7 +255,7 @@ class Main: #first section
                     eer_increased_n_times += 1
                 print('EER:', current_eer, ' fold: ', experiment_count, ' components: ', componentNumber)
             print('Optimum no of components for the foreground model: ',best_component_number)
-            test_models_for_report_first_section(best_models, subjectsSplit[2])
+            eer_development_set[experiment_count] = best_EER
             second_section(best_models,subjects, subjectsSplit)
                 # print('Bic_sum',bic_sum/10,' fold: ', experiment_count,' components: ',componentNumber)
 
