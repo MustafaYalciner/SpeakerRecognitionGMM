@@ -49,8 +49,38 @@ def operation_on_each_element(matrix, lmd):
                     matrix[i][j][k] = lmd(matrix[i][j][k])
     return matrix
 
+def calculate_hter(matrix, thresholds):
+    far = [None] * len(matrix)
+    frr = [None] * len(matrix)
+    approximation_steps = 0
+    acceptedAndGen = [0] * len(matrix)
+    acceptedAndImpo = [0] * len(matrix)
+    rejectedAndGen = [0] * len(matrix)
+    rejectedAndImpo = [0] * len(matrix)
+    for s in range(len(matrix)):
+        for r in range(len(matrix[s])):
+            for m in range(len(matrix[s][r])):
+                if matrix[s][r][m] is not None:
+                    if matrix[s][r][m] < thresholds[s]:
+                        if s == m:
+                            rejectedAndGen[s] += 1
+                        else:
+                            rejectedAndImpo[s] += 1
+                    else:
+                        if s == m:
+                            acceptedAndGen[s] += 1
+                        else:
+                            acceptedAndImpo[s] += 1
+        far[s] = acceptedAndImpo[s] / (acceptedAndImpo[s] + rejectedAndImpo[s])
+        frr[s] = rejectedAndGen[s] / (rejectedAndGen[s] + acceptedAndGen[s])
+    total_far = sum(acceptedAndImpo) / (sum(acceptedAndImpo)+sum(rejectedAndImpo))
+    total_frr = sum(rejectedAndGen) / (sum(rejectedAndGen) + sum(acceptedAndGen))
+    if ((total_frr+total_far)/2)>0.3:
+        print('stop')
+    return (total_frr+total_far)/2
 
-def calculate_user_dependent_scores(matrix):
+
+def calculate_user_dependent_eer(matrix):
     lower_bounds = [0] * len(matrix)
     upper_bounds = [1] * len(matrix)
     thresholds = [0.5] * len(matrix)
@@ -58,15 +88,15 @@ def calculate_user_dependent_scores(matrix):
     frr = [None] * len(matrix)
     approximation_steps = 0
     while approximation_steps < 30:
+        acceptedAndGen = [0] * len(matrix)
+        acceptedAndImpo = [0] * len(matrix)
+        rejectedAndGen = [0] * len(matrix)
+        rejectedAndImpo = [0] * len(matrix)
         for s in range(len(matrix)):
-            acceptedAndGen = [None] * len(matrix)
-            acceptedAndImpo = [None] * len(matrix)
-            rejectedAndGen = [None] * len(matrix)
-            rejectedAndImpo = [None] * len(matrix)
             for r in range(len(matrix[s])):
                 for m in range(len(matrix[s][r])):
                     if matrix[s][r][m] is not None:
-                        if matrix[s][m][r] < thresholds[s]:
+                        if matrix[s][r][m] < thresholds[s]:
                             if s == m:
                                 rejectedAndGen[s] += 1
                             else:
@@ -85,7 +115,9 @@ def calculate_user_dependent_scores(matrix):
                 upper_bounds[s] = thresholds[s]
                 thresholds[s] = (upper_bounds[s]+lower_bounds[s])/2
         approximation_steps += 1
-    return far, frr
+    total_far = sum(acceptedAndImpo) / (sum(acceptedAndImpo)+sum(rejectedAndImpo))
+    total_frr = sum(rejectedAndGen) / (sum(rejectedAndGen) + sum(acceptedAndGen))
+    return (total_frr+total_far)/2, thresholds
 
 def calculate_EER_on_normalized_matrix(matrix):
     upper_bound = 1
@@ -119,7 +151,7 @@ def calculate_EER_on_normalized_matrix(matrix):
             upper_bound = t_hold
         else:
             break
-    return (far+frr)/2
+    return (far+frr)/2, t_hold
 
 def calculate_sim_matrix(models, developmentSet):
     max_row = 0
@@ -172,14 +204,14 @@ def second_section(models, subjects, subjectsSplit):
     background_data_train = merge_background_data(subjectsSplit[0])
     eer_increased_n_times = 0
 # wrong because background_data_development = merge_background_data(subjectsSplit[1])
-    while eer_increased_n_times < 3:
+    while eer_increased_n_times < 2:
         for user_index in range(len(subjects)):
             ubm_models[user_index] = GaussianMixture(n_components=n_components_ubm)
             ubm_models[user_index].fit(background_data_train[user_index])
         if len(models) != len(ubm_models):
             print('Error, no of fore and background models are unequal')
         for i in range(len(models)):
-            merged_models[i] = FusionedModel(models[i],ubm_models[i])
+            merged_models[i] = FusionedModel(models[i], ubm_models[i])
         current_eer = calculate_EER_on_normalized_matrix(calculate_normalized_similarity_matrix(merged_models, subjectsSplit[1]))
         if best_EER > current_eer:
             best_EER = current_eer
@@ -193,11 +225,44 @@ def second_section(models, subjects, subjectsSplit):
     print('best no of components: ', best_n_components_ubm)
 
 
-def client_specific_hter(best_models, testset): # testset contains the test data for each subject [0..9]
-    sim_matrix = calculate_normalized_similarity_matrix()
-    far, frr = calculate_user_dependent_scores(sim_matrix)
-    return (far+frr)/2
+def hter_with_thold(best_models, test_set, best_thresholds): # testset contains the test data for each subject [0..9]
+    return calculate_hter(calculate_normalized_similarity_matrix(best_models,test_set), best_thresholds)
 
+
+def find_optimum_components(subjectsSplit, subjects, thresholding_method):
+    # Calculate the number of GMM models for each subject independently and save them in an array.
+    models = [None] * len(subjects)
+    best_component_number = 1
+    best_EER = 1
+    best_models = [None] * len(subjects)
+    best_component_number = 1
+    eer_increased_n_times = 0
+    componentNumber = 0
+    best_threshold = -1
+
+    # Even though we may not find the global minimum eer, some experiments have shown that
+    # we are reaching a good eer with this approach.
+    # The EER is fluctuating alot for a very high number of components.
+    while eer_increased_n_times < 2:
+        componentNumber += 1
+        for index in range(len(subjects)):
+            gmm = GaussianMixture(n_components=componentNumber, n_init=1)
+            gmm.fit(subjectsSplit[0][index])
+            models[index] = gmm
+        current_eer, thold_result = thresholding_method(calculate_normalized_similarity_matrix(models, subjectsSplit[1]))
+
+        if best_EER > current_eer:
+            best_threshold = thold_result
+            best_EER = current_eer
+            best_models = copy.deepcopy(models)
+            best_component_number = componentNumber
+            eer_increased_n_times = 0
+        else:
+            eer_increased_n_times += 1
+        print('EER:', current_eer, ' components: ',
+              componentNumber)
+    print('Optimum no of components for the foreground model: ', best_component_number)
+    return best_EER, best_models, best_threshold
 
 class Main: #first section
     if __name__ == '__main__':
@@ -217,51 +282,48 @@ class Main: #first section
         for index in range(len(copy.deepcopy(subjects))):
             subjects[index] = subjects[index].drop(columns=['Label'])
         # The rows for each subject will be divided into three sets for training development and test.
-        eer_development_set = [[None]*len(subjects)]*5
-        client_specific_hter_values = [[None] * len(subjects)] * 5
-        hter_test_set_user_independent = [[None]*len(subjects)]*5
+        eer_development_set_user_independent = [None]*5
+        eer_development_set_user_dependent = [None]*5
+
+        thold_best_eer_fold = [None]*5
+        thold_best_eer_fold_user_dependent = [[None]*len(subjects)]*5
+
+        models_user_independent = [[None]*len(subjects)]*5
+        models_user_dependent = [[None]*len(subjects)]*5
+
+        hter_test_set_user_dependent = [None] * 5
+        hter_test_set_user_independent = [None]*5
 
 
         for experiment_count in range(5):
             subjectsSplit = shuffle_split_data(subjects)
-            # Calculate the number of GMM models for each subject independently and save them in an array.
-            models = [None] * len(subjects)
-            best_component_number = 1
-            best_EER = 1
-            best_models = [None] * len(subjects)
-            best_component_number = 1
-            eer_increased_n_times = 0
-            componentNumber = 0
+            print('Fold no: ', experiment_count)
+            eer_development_set_user_independent[experiment_count], models_user_independent[experiment_count], thold_user_inde \
+                = find_optimum_components(subjectsSplit,
+                                          subjects,
+                                          calculate_EER_on_normalized_matrix)
+            print('eer_development_set_user_independent', eer_development_set_user_independent[experiment_count])
 
-            # Even though we may not find the global minimum eer, some experiments have shown that
-            # we are reaching a good eer with this approach.
-            # The EER is fluctuating alot for a very high number of components.
-            while eer_increased_n_times < 3 or componentNumber >100: # provide an upper bound to make sure the loop terminates
-                componentNumber += 1
-                bic_sum = 0
-                for index in range(len(subjects)):
-                    gmm = GaussianMixture(n_components=componentNumber, n_init=1)
-                    gmm.fit(subjectsSplit[0][index])
-                    models[index] = gmm
-                #                    bic_sum += models[index].bic(subjectsSplit[0][index])
-                current_eer = calculate_EER_on_normalized_matrix(calculate_normalized_similarity_matrix(models, subjectsSplit[1]))
+            hter_test_set_user_independent[experiment_count] \
+                = hter_with_thold(models_user_independent[experiment_count],subjectsSplit[2],([thold_user_inde]*len(subjects)))
+            print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
 
-                if best_EER > current_eer:
-                    best_EER = current_eer
-                    best_models = copy.deepcopy(models)
-                    best_component_number = componentNumber
-                    eer_increased_n_times = 0
-                else:
-                    eer_increased_n_times += 1
-                print('EER:', current_eer, ' fold: ', experiment_count, ' components: ', componentNumber)
-            print('Optimum no of components for the foreground model: ',best_component_number)
-            eer_development_set[experiment_count] = best_EER
-            second_section(best_models,subjects, subjectsSplit)
-                # print('Bic_sum',bic_sum/10,' fold: ', experiment_count,' components: ',componentNumber)
+            eer_development_set_user_dependent[experiment_count], models_user_dependent[experiment_count], tholds_user_depend \
+                = find_optimum_components(subjectsSplit,
+                                          subjects,
+                                          calculate_user_dependent_eer)
+            print('eer_development_set_user_dependent', eer_development_set_user_dependent[experiment_count])
+
+            hter_test_set_user_dependent[experiment_count] \
+                = hter_with_thold(models_user_dependent[experiment_count], subjectsSplit[2], tholds_user_depend)
+
+            print('hter_test_set_user_dependent', hter_test_set_user_dependent[experiment_count])
 
 
 
 
+
+    #second_section(best_models, subjects, subjectsSplit)
 
 #       According to sklearn documentation, the GMM here already uses the Mahalanobis distance by default
 #       https://scikit-learn.org/stable/modules/clustering.html
