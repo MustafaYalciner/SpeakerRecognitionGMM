@@ -57,11 +57,11 @@ def calculate_user_dependent_scores(matrix):
     frr = [None] * len(matrix)
     approximation_steps = 0
     while approximation_steps < 30:
-        acceptedAndGen = [None] * len(matrix)
-        acceptedAndImpo = [None] * len(matrix)
-        rejectedAndGen = [None] * len(matrix)
-        rejectedAndImpo = [None] * len(matrix)
         for s in range(len(matrix)):
+            acceptedAndGen = [None] * len(matrix)
+            acceptedAndImpo = [None] * len(matrix)
+            rejectedAndGen = [None] * len(matrix)
+            rejectedAndImpo = [None] * len(matrix)
             for r in range(len(matrix[s])):
                 for m in range(len(matrix[s][r])):
                     if matrix[s][r][m] is not None:
