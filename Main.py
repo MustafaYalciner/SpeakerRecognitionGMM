@@ -1,6 +1,7 @@
 import copy
 import pandas as pd
 import numpy as np
+import pickle
 import sklearn
 from pandas import DataFrame
 from sklearn.mixture import GaussianMixture
@@ -189,9 +190,31 @@ def merge_background_data(user_divided_data):
         background_data[user_index] = concat_background_data(user_index, user_divided_data)
     return background_data
 
+def extract_subjects():
+    # We will calculate a similarity matrix similar to the first assignment.
+    data = pd.read_csv('data/features_no_txt.csv')
+    data = data.drop(columns=['Filename'])
+    dataGrouped = data.groupby('Label')
+    users = data['Label'].unique()
+    subjects = [DataFrame()] * 10
+    lastIndex = 0
+    for user in users:
+        subjects[lastIndex] = data.loc[data['Label'] == user]
+        lastIndex = lastIndex + 1
+    # The array 'subjects' now contains the rows for each subject in separate fields
+
+    # Drop the Labels since they are now identified by their indices.
+    for index in range(len(copy.deepcopy(subjects))):
+        subjects[index] = subjects[index].drop(columns=['Label'])
+    return subjects
+
+
 # the subjects contain all the data for each subject in the array.
-def second_section(models, subjects, subjectsSplit):
+def second_section():
     # subjectsSplit: for each in (train, develop, test) -> for each user -> subset of data for that user and for that purpose.
+    pickle_in = open("./data/models_user_dependent", "rb")
+    models = pickle.load(pickle_in)
+    subjects = extract_subjects()
     ubm_models = [None] * len(subjects)
     merged_models = [None] * len(subjects)
     ubm_best_component_no = 1
@@ -201,28 +224,35 @@ def second_section(models, subjects, subjectsSplit):
     best_n_components_ubm = 1
     best_EER = 1
     best_models = [None] * len(subjects)
-    background_data_train = merge_background_data(subjectsSplit[0])
     eer_increased_n_times = 0
+    best_thresholds = [None]*5  # In this list the user specific thresholds are written for each fold. (2d arr actually)
 # wrong because background_data_development = merge_background_data(subjectsSplit[1])
-    while eer_increased_n_times < 2:
-        for user_index in range(len(subjects)):
-            ubm_models[user_index] = GaussianMixture(n_components=n_components_ubm)
-            ubm_models[user_index].fit(background_data_train[user_index])
-        if len(models) != len(ubm_models):
-            print('Error, no of fore and background models are unequal')
-        for i in range(len(models)):
-            merged_models[i] = FusionedModel(models[i], ubm_models[i])
-        current_eer = calculate_EER_on_normalized_matrix(calculate_normalized_similarity_matrix(merged_models, subjectsSplit[1]))
-        if best_EER > current_eer:
-            best_EER = current_eer
-            best_models = copy.deepcopy(merged_models)
-            best_n_components_ubm = n_components_ubm
-            eer_increased_n_times = 0
-        else:
-            eer_increased_n_times += 1
-        print('EER:', current_eer, ' components: ', n_components_ubm)
-        n_components_ubm += 1
-    print('best no of components: ', best_n_components_ubm)
+    for experiment_count in range(5):
+        subjectsSplit = shuffle_split_data(subjects)
+        background_data_train = merge_background_data(subjectsSplit[0])
+        subjectsSplit = shuffle_split_data(subjects)
+        background_data_train = merge_background_data(subjectsSplit[0])
+
+        while eer_increased_n_times < 3:
+            for user_index in range(len(subjects)):
+                ubm_models[user_index] = GaussianMixture(n_components=n_components_ubm)
+                ubm_models[user_index].fit(background_data_train[user_index])
+            if len(models) != len(ubm_models):
+                print('Error, no of fore and background models are unequal')
+            for i in range(len(models)):
+                merged_models[i] = FusionedModel(models[i], ubm_models[i])
+            current_eer, thresholds = calculate_user_dependent_eer(calculate_normalized_similarity_matrix(merged_models, subjectsSplit[1]))
+            if best_EER > current_eer:
+                best_EER = current_eer
+                best_thresholds[experiment_count] = thresholds
+                best_models = copy.deepcopy(merged_models)
+                best_n_components_ubm = n_components_ubm
+                eer_increased_n_times = 0
+            else:
+                eer_increased_n_times += 1
+            print('EER:', current_eer, ' components: ', n_components_ubm)
+            n_components_ubm += 1
+        print('best no of components: ', best_n_components_ubm)
 
 
 def hter_with_thold(best_models, test_set, best_thresholds): # testset contains the test data for each subject [0..9]
@@ -243,7 +273,7 @@ def find_optimum_components(subjectsSplit, subjects, thresholding_method):
     # Even though we may not find the global minimum eer, some experiments have shown that
     # we are reaching a good eer with this approach.
     # The EER is fluctuating alot for a very high number of components.
-    while eer_increased_n_times < 2:
+    while eer_increased_n_times < 3:
         componentNumber += 1
         for index in range(len(subjects)):
             gmm = GaussianMixture(n_components=componentNumber, n_init=1)
@@ -264,62 +294,70 @@ def find_optimum_components(subjectsSplit, subjects, thresholding_method):
     print('Optimum no of components for the foreground model: ', best_component_number)
     return best_EER, best_models, best_threshold
 
+
 class Main: #first section
     if __name__ == '__main__':
-        # We will calculate a similarity matrix similar to the first assignment.
-        data = pd.read_csv('data/features_no_txt.csv')
-        data = data.drop(columns=['Filename'])
-        dataGrouped = data.groupby('Label')
-        users = data['Label'].unique()
-        subjects = [DataFrame()] * 10
-        lastIndex = 0
-        for user in users:
-            subjects[lastIndex] = data.loc[data['Label'] == user]
-            lastIndex = lastIndex + 1
-        # The array 'subjects' now contains the rows for each subject in separate fields
 
-        # Drop the Labels since they are now identified by their indices.
-        for index in range(len(copy.deepcopy(subjects))):
-            subjects[index] = subjects[index].drop(columns=['Label'])
-        # The rows for each subject will be divided into three sets for training development and test.
-        eer_development_set_user_independent = [None]*5
-        eer_development_set_user_dependent = [None]*5
+        pickle_out = open("./data/test", "wb")
+        pickle.dump([1,2,3], pickle_out)
+        first_section_done = True
+        subjects = extract_subjects()
+        if first_section_done:
+            second_section()
+        else:
+            # The rows for each subject will be divided into three sets for training development and test.
+            eer_development_set_user_independent = [None]*5
+            eer_development_set_user_dependent = [None]*5
 
-        thold_best_eer_fold = [None]*5
-        thold_best_eer_fold_user_dependent = [[None]*len(subjects)]*5
+            thold_best_eer_fold = [None]*5
+            thold_best_eer_fold_user_dependent = [[None]*len(subjects)]*5
 
-        models_user_independent = [[None]*len(subjects)]*5
-        models_user_dependent = [[None]*len(subjects)]*5
+            models_user_independent = [[None]*len(subjects)]*5
+            models_user_dependent = [[None]*len(subjects)]*5
 
-        hter_test_set_user_dependent = [None] * 5
-        hter_test_set_user_independent = [None]*5
+            hter_test_set_user_dependent = [None] * 5
+            hter_test_set_user_independent = [None]*5
 
 
-        for experiment_count in range(5):
-            subjectsSplit = shuffle_split_data(subjects)
-            print('Fold no: ', experiment_count)
-            eer_development_set_user_independent[experiment_count], models_user_independent[experiment_count], thold_user_inde \
-                = find_optimum_components(subjectsSplit,
-                                          subjects,
-                                          calculate_EER_on_normalized_matrix)
-            print('eer_development_set_user_independent', eer_development_set_user_independent[experiment_count])
-
-            hter_test_set_user_independent[experiment_count] \
-                = hter_with_thold(models_user_independent[experiment_count],subjectsSplit[2],([thold_user_inde]*len(subjects)))
-            print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
-
-            eer_development_set_user_dependent[experiment_count], models_user_dependent[experiment_count], tholds_user_depend \
-                = find_optimum_components(subjectsSplit,
-                                          subjects,
-                                          calculate_user_dependent_eer)
-            print('eer_development_set_user_dependent', eer_development_set_user_dependent[experiment_count])
-
-            hter_test_set_user_dependent[experiment_count] \
-                = hter_with_thold(models_user_dependent[experiment_count], subjectsSplit[2], tholds_user_depend)
-
-            print('hter_test_set_user_dependent', hter_test_set_user_dependent[experiment_count])
+            for experiment_count in range(5):
+                subjectsSplit = shuffle_split_data(subjects)
+                print('Fold no: ', experiment_count)
 
 
+                eer_development_set_user_dependent[experiment_count], models_user_dependent[experiment_count], tholds_user_depend \
+                    = find_optimum_components(subjectsSplit,
+                                              subjects,
+                                              calculate_user_dependent_eer)
+                print('eer_development_set_user_dependent', eer_development_set_user_dependent[experiment_count])
+
+                hter_test_set_user_dependent[experiment_count] \
+                    = hter_with_thold(models_user_dependent[experiment_count], subjectsSplit[2], tholds_user_depend)
+                print('hter_test_set_user_dependent', hter_test_set_user_dependent[experiment_count])
+
+
+                eer_development_set_user_independent[experiment_count], models_user_independent[experiment_count], thold_user_inde \
+                    = find_optimum_components(subjectsSplit,
+                                              subjects,
+                                              calculate_EER_on_normalized_matrix)
+                print('eer_development_set_user_independent', eer_development_set_user_independent[experiment_count])
+
+                hter_test_set_user_independent[experiment_count] \
+                    = hter_with_thold(models_user_independent[experiment_count],subjectsSplit[2],([thold_user_inde]*len(subjects)))
+                print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
+
+            print('Average eer development set user dependent: ', (sum(eer_development_set_user_dependent)/5),
+                  'Standard deviation: ', np.std(eer_development_set_user_dependent))
+            print('Average eer development set user independent: ', (sum(eer_development_set_user_independent)/5),
+                  'Standard deviation: ', np.std(eer_development_set_user_independent))
+            print('Average hter test set user dependent: ', (sum(hter_test_set_user_dependent)/5),
+                  'Standard deviation: ', np.std(hter_test_set_user_dependent))
+            print('Average hter test set user independent: ', (sum(hter_test_set_user_independent)/5),
+                  'Standard deviation: ', np.std(hter_test_set_user_independent))
+
+            # Pick the user dependent models as our best models to do the second section of the homework.
+
+            pickle_out = open("./data/models_user_dependent", "wb")
+            pickle.dump(models_user_dependent, pickle_out)
 
 
 
