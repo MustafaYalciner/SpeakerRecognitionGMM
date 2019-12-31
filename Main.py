@@ -1,9 +1,11 @@
 import copy
+import matplotlib.pyplot as plt
 import pandas as pd
 import numpy as np
 import pickle
 from operator import itemgetter
 import sklearn
+from matplotlib.pyplot import plot
 from pandas import DataFrame
 from sklearn.mixture import GaussianMixture
 import matplotlib.pyplot as plt
@@ -121,6 +123,23 @@ def calculate_user_dependent_eer(matrix):
     total_frr = sum(rejectedAndGen) / (sum(rejectedAndGen) + sum(acceptedAndGen))
     return (total_frr+total_far)/2, thresholds
 
+def gen_impo_histogram(matrix):
+    gen_scores = []
+    impo_scores = []
+    for s in range(len(matrix)):
+        for r in range(len(matrix[s])):
+            for m in range(len(matrix[s][r])):
+                if matrix[s][r][m] is not None:
+                    if s == m:
+                        gen_scores.append(matrix[s][r][m])
+                    else:
+                        impo_scores.append(matrix[s][r][m])
+    plt.hist(gen_scores,5)
+    plt.hist(impo_scores,150)
+
+    plt.savefig('./data/hist.png')
+
+
 def plot_far_frr_curve(matrix):
     far = [None]*100
     frr = [None]*100
@@ -147,6 +166,11 @@ def plot_far_frr_curve(matrix):
 
         far[titerator] = acceptedAndImpo / (acceptedAndImpo + rejectedAndImpo)
         frr[titerator] = rejectedAndGen / (rejectedAndGen + acceptedAndGen)
+
+    plt.plot(far)
+    plt.plot(frr)
+    plt.savefig('./data/far_frr_curve.png')
+
 
 def calculate_EER_on_normalized_matrix(matrix):
     upper_bound = 1
@@ -257,7 +281,7 @@ def second_section():
     best_models = [[None]*len(subjects)]*5
     eer_increased_n_times = 0
     best_thresholds = [None]*5  # In this list the user specific thresholds are written for each fold. (2d arr actually)
-
+    hter_test_set_onle_foreground = [None] *5
     for experiment_count in range(5):
         subjectsSplit = shuffle_split_data(subjects)
         background_data_train = merge_background_data(subjectsSplit[0])
@@ -269,7 +293,7 @@ def second_section():
         test_current_eer, test_thresholds = calculate_user_dependent_eer(calculate_normalized_similarity_matrix(best_foreground_models[experiment_count],subjectsSplit[1]))
         print('EER:', test_current_eer, 'value of foreground model, no of components: ', 28, 'fold',experiment_count)
 
-        while eer_increased_n_times < 3:
+        while eer_increased_n_times <3:
             for user_index in range(len(subjects)):
                 # train the ubm with the user specific noise
                 ubm_models[experiment_count][user_index] = GaussianMixture(n_components=n_components_ubm)
@@ -279,8 +303,7 @@ def second_section():
                 merged_models[experiment_count][user_index] = FusionedModel(best_foreground_models[experiment_count][user_index],ubm_models[experiment_count][user_index])
 
             current_eer, thresholds = calculate_user_dependent_eer(calculate_normalized_similarity_matrix(merged_models[experiment_count],
-                                                                                      subjectsSplit[1]))
-
+                                                                                   subjectsSplit[1]))
             if best_EER > current_eer:
                 best_EER = current_eer
                 eer_development_set_user_dependent[experiment_count] = current_eer
@@ -293,13 +316,18 @@ def second_section():
             print('EER:', current_eer, ' components: ', n_components_ubm)
             n_components_ubm += 1
 
+        plot_far_frr_curve(calculate_normalized_similarity_matrix(best_models, subjectsSplit[2]))
+        gen_impo_histogram(calculate_normalized_similarity_matrix(best_models, subjectsSplit[2]))
 
         hter_test_set_user_dependent[experiment_count] \
             = hter_with_thold(merged_models[experiment_count], subjectsSplit[2], best_thresholds[experiment_count])
+        hter_test_set_onle_foreground[experiment_count] \
+            = hter_with_thold(best_foreground_models[experiment_count], subjectsSplit[2], best_thresholds[experiment_count])
         n_components_ubm = 1
         best_EER=1
         eer_increased_n_times=0
     print('hter on test set: ', hter_test_set_user_dependent)
+    print('hter on test set only foreground: ', hter_test_set_onle_foreground)
     print('eer on development set: ', eer_development_set_user_dependent)
     print('n of components of background model: ', list(map(lambda x: x[0].get_n_components_of_background(), merged_models)))
 
@@ -344,74 +372,75 @@ def find_optimum_components(subjectsSplit, subjects, thresholding_method):
 
 class Main: #first section
     if __name__ == '__main__':
-        first_section_done = True
-        if first_section_done:
-            second_section()
-        else:
-            subjects = extract_subjects()
-            # The rows for each subject will be divided into three sets for training development and test.
-            eer_development_set_user_independent = [None]*5
-            eer_development_set_user_dependent = [None]*5
+        subjects = extract_subjects()
+        # The rows for each subject will be divided into three sets for training development and test.
+        eer_development_set_user_independent = [None]*5
+        eer_development_set_user_dependent = [None]*5
 
-            thold_best_eer_fold = [None]*5
-            thold_best_eer_fold_user_dependent = [[None]*len(subjects)]*5
+        thold_best_eer_fold = [None]*5
+        thold_best_eer_fold_user_dependent = [[None]*len(subjects)]*5
 
-            models_user_independent = [[None]*len(subjects)]*5
-            models_user_dependent = [[None]*len(subjects)]*5
+        models_user_independent = [[None]*len(subjects)]*5
+        models_user_dependent = [[None]*len(subjects)]*5
 
-            hter_test_set_user_dependent = [None] * 5
-            hter_test_set_user_independent = [None]*5
+        hter_test_set_user_dependent = [None] * 5
+        hter_test_set_user_independent = [None]*5
 
 
-            for experiment_count in range(5):
-                subjectsSplit = shuffle_split_data(subjects)
-                print('Fold no: ', experiment_count)
+        for experiment_count in range(5):
+            subjectsSplit = shuffle_split_data(subjects)
+            print('Fold no: ', experiment_count)
 
 
-                eer_development_set_user_dependent[experiment_count], models_user_dependent[experiment_count], tholds_user_depend \
-                    = find_optimum_components(subjectsSplit,
-                                              subjects,
-                                              calculate_user_dependent_eer)
-                print('eer_development_set_user_dependent', eer_development_set_user_dependent[experiment_count])
+            eer_development_set_user_dependent[experiment_count], models_user_dependent[experiment_count], tholds_user_depend \
+                = find_optimum_components(subjectsSplit,
+                                          subjects,
+                                          calculate_user_dependent_eer)
+            print('eer_development_set_user_dependent', eer_development_set_user_dependent[experiment_count])
 
-                hter_test_set_user_dependent[experiment_count] \
-                    = hter_with_thold(models_user_dependent[experiment_count], subjectsSplit[2], tholds_user_depend)
-                print('hter_test_set_user_dependent', hter_test_set_user_dependent[experiment_count])
-
-
-                eer_development_set_user_independent[experiment_count], models_user_independent[experiment_count], thold_user_inde \
-                    = find_optimum_components(subjectsSplit,
-                                              subjects,
-                                              calculate_EER_on_normalized_matrix)
-                print('eer_development_set_user_independent', eer_development_set_user_independent[experiment_count])
-
-                hter_test_set_user_independent[experiment_count] \
-                    = hter_with_thold(models_user_independent[experiment_count],subjectsSplit[2],([thold_user_inde]*len(subjects)))
-                print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
+            plot_far_frr_curve(calculate_normalized_similarity_matrix(models_user_dependent[experiment_count], subjectsSplit[2]))
+            gen_impo_histogram(calculate_normalized_similarity_matrix(models_user_dependent[experiment_count], subjectsSplit[2]))
 
 
-            print('eer_development_set_user_dependent',eer_development_set_user_dependent)
-            print('models_user_dependent', list(map(lambda x: x[0].n_components, models_user_dependent)))
-            print('hter_test_set_user_dependent',hter_test_set_user_dependent)
+            hter_test_set_user_dependent[experiment_count] \
+                = hter_with_thold(models_user_dependent[experiment_count], subjectsSplit[2], tholds_user_depend)
+            print('hter_test_set_user_dependent', hter_test_set_user_dependent[experiment_count])
 
-            print('eer_development_set_user_independent',eer_development_set_user_independent)
-            print('models_user_independent', list(map(lambda x: x[0].n_components, models_user_independent)))
-            print('hter_test_set_user_independent',hter_test_set_user_independent)
 
-            print('Average eer development set user dependent: ', (sum(eer_development_set_user_dependent)/5),
-                  'Standard deviation: ', np.std(eer_development_set_user_dependent))
-            print('Average eer development set user independent: ', (sum(eer_development_set_user_independent)/5),
-                  'Standard deviation: ', np.std(eer_development_set_user_independent))
-            print('Average hter test set user dependent: ', (sum(hter_test_set_user_dependent)/5),
-                  'Standard deviation: ', np.std(hter_test_set_user_dependent))
-            print('Average hter test set user independent: ', (sum(hter_test_set_user_independent)/5),
-                  'Standard deviation: ', np.std(hter_test_set_user_independent))
+            eer_development_set_user_independent[experiment_count], models_user_independent[experiment_count], thold_user_inde \
+                = find_optimum_components(subjectsSplit,
+                                          subjects,
+                                          calculate_EER_on_normalized_matrix)
+            print('eer_development_set_user_independent', eer_development_set_user_independent[experiment_count])
 
-            # Pick the user dependent models as our best models to do the second section of the homework.
+            hter_test_set_user_independent[experiment_count] \
+                = hter_with_thold(models_user_independent[experiment_count],subjectsSplit[2],([thold_user_inde]*len(subjects)))
+            print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
 
-            index_of_min = min(enumerate(hter_test_set_user_dependent), key=itemgetter(1))[0]
-            print('Use the following no of components: ', models_user_dependent[index_of_min][8].n_components)
 
+
+        print('eer_development_set_user_dependent',eer_development_set_user_dependent)
+        print('models_user_dependent', list(map(lambda x: x[0].n_components, models_user_dependent)))
+        print('hter_test_set_user_dependent',hter_test_set_user_dependent)
+
+        print('eer_development_set_user_independent',eer_development_set_user_independent)
+        print('models_user_independent', list(map(lambda x: x[0].n_components, models_user_independent)))
+        print('hter_test_set_user_independent',hter_test_set_user_independent)
+
+        print('Average eer development set user dependent: ', (sum(eer_development_set_user_dependent)/5),
+              'Standard deviation: ', np.std(eer_development_set_user_dependent))
+        print('Average eer development set user independent: ', (sum(eer_development_set_user_independent)/5),
+              'Standard deviation: ', np.std(eer_development_set_user_independent))
+        print('Average hter test set user dependent: ', (sum(hter_test_set_user_dependent)/5),
+              'Standard deviation: ', np.std(hter_test_set_user_dependent))
+        print('Average hter test set user independent: ', (sum(hter_test_set_user_independent)/5),
+              'Standard deviation: ', np.std(hter_test_set_user_independent))
+
+        # Pick the user dependent models as our best models to do the second section of the homework.
+
+        index_of_min = min(enumerate(hter_test_set_user_dependent), key=itemgetter(1))[0]
+        print('Use the following no of components: ', models_user_dependent[index_of_min][8].n_components)
+        second_section()
 
     #second_section(best_models, subjects, subjectsSplit)
 
