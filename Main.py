@@ -121,6 +121,33 @@ def calculate_user_dependent_eer(matrix):
     total_frr = sum(rejectedAndGen) / (sum(rejectedAndGen) + sum(acceptedAndGen))
     return (total_frr+total_far)/2, thresholds
 
+def plot_far_frr_curve(matrix):
+    far = [None]*100
+    frr = [None]*100
+    for titerator in range(0,100):
+        t_hold = titerator / 100
+        acceptedAndGen = 0
+        acceptedAndImpo = 0
+        rejectedAndGen = 0
+        rejectedAndImpo = 0
+        for s in range(len(matrix)):
+            for r in range(len(matrix[s])):
+                for m in range(len(matrix[s][r])):
+                    if matrix[s][r][m] is not None:
+                        if matrix[s][r][m] < t_hold:
+                            if s == m:
+                                rejectedAndGen += 1
+                            else:
+                                rejectedAndImpo += 1
+                        if matrix[s][r][m] >= t_hold:
+                            if s == m:
+                                acceptedAndGen += 1
+                            else:
+                                acceptedAndImpo += 1
+
+        far[titerator] = acceptedAndImpo / (acceptedAndImpo + rejectedAndImpo)
+        frr[titerator] = rejectedAndGen / (rejectedAndGen + acceptedAndGen)
+
 def calculate_EER_on_normalized_matrix(matrix):
     upper_bound = 1
     lower_bound = 0
@@ -210,9 +237,15 @@ def extract_subjects():
     return subjects
 
 
+def hter_with_thold(best_models, test_set, best_thresholds): # testset contains the test data for each subject [0..9]
+    return calculate_hter(calculate_normalized_similarity_matrix(best_models,test_set), best_thresholds)
+
 # the subjects contain all the data for each subject in the array.
 def second_section():
     # subjectsSplit: for each in (train, develop, test) -> for each user -> subset of data for that user and for that purpose.
+
+    eer_development_set_user_dependent = [None] * 5
+    hter_test_set_user_dependent = [None] * 5
 
     subjects = extract_subjects()
     best_foreground_models = [[None]*len(subjects)]*5
@@ -230,8 +263,12 @@ def second_section():
         background_data_train = merge_background_data(subjectsSplit[0])
 
         for user_index in range(len(subjects)):
-            best_foreground_models[experiment_count][user_index] = GaussianMixture(n_components=31)
+            best_foreground_models[experiment_count][user_index] = GaussianMixture(n_components=28)
             best_foreground_models[experiment_count][user_index].fit(subjectsSplit[0][user_index])
+
+        test_current_eer, test_thresholds = calculate_user_dependent_eer(calculate_normalized_similarity_matrix(best_foreground_models[experiment_count],subjectsSplit[1]))
+        print('EER:', test_current_eer, 'value of foreground model, no of components: ', 28, 'fold',experiment_count)
+
         while eer_increased_n_times < 3:
             for user_index in range(len(subjects)):
                 # train the ubm with the user specific noise
@@ -241,31 +278,32 @@ def second_section():
 
                 merged_models[experiment_count][user_index] = FusionedModel(best_foreground_models[experiment_count][user_index],ubm_models[experiment_count][user_index])
 
-            test_current_eer, test_thresholds = calculate_user_dependent_eer(calculate_normalized_similarity_matrix(best_foreground_models[experiment_count],
-                                                                                      subjectsSplit[1]))
             current_eer, thresholds = calculate_user_dependent_eer(calculate_normalized_similarity_matrix(merged_models[experiment_count],
                                                                                       subjectsSplit[1]))
 
             if best_EER > current_eer:
                 best_EER = current_eer
+                eer_development_set_user_dependent[experiment_count] = current_eer
                 best_thresholds[experiment_count] = thresholds
                 best_models = copy.deepcopy(merged_models[experiment_count])
                 best_n_components_ubm = n_components_ubm
                 eer_increased_n_times = 0
             else:
                 eer_increased_n_times += 1
-            print('EER:', test_current_eer, 'of foreground model components: ', 31)
             print('EER:', current_eer, ' components: ', n_components_ubm)
             n_components_ubm += 1
 
-        print('best no of components: ', best_n_components_ubm)
-        print('best eer: ', best_EER)
+
+        hter_test_set_user_dependent[experiment_count] \
+            = hter_with_thold(merged_models[experiment_count], subjectsSplit[2], best_thresholds[experiment_count])
         n_components_ubm = 1
+        best_EER=1
+        eer_increased_n_times=0
+    print('hter on test set: ', hter_test_set_user_dependent)
+    print('eer on development set: ', eer_development_set_user_dependent)
+    print('n of components of background model: ', list(map(lambda x: x[0].get_n_components_of_background(), merged_models)))
 
 
-
-def hter_with_thold(best_models, test_set, best_thresholds): # testset contains the test data for each subject [0..9]
-    return calculate_hter(calculate_normalized_similarity_matrix(best_models,test_set), best_thresholds)
 
 
 def find_optimum_components(subjectsSplit, subjects, thresholding_method):
@@ -306,7 +344,7 @@ def find_optimum_components(subjectsSplit, subjects, thresholding_method):
 
 class Main: #first section
     if __name__ == '__main__':
-        first_section_done = False
+        first_section_done = True
         if first_section_done:
             second_section()
         else:
@@ -351,12 +389,13 @@ class Main: #first section
                     = hter_with_thold(models_user_independent[experiment_count],subjectsSplit[2],([thold_user_inde]*len(subjects)))
                 print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
 
+
             print('eer_development_set_user_dependent',eer_development_set_user_dependent)
-            print('models_user_dependent', list(map(lambda x: x.n_components, models_user_dependent)))
+            print('models_user_dependent', list(map(lambda x: x[0].n_components, models_user_dependent)))
             print('hter_test_set_user_dependent',hter_test_set_user_dependent)
 
             print('eer_development_set_user_independent',eer_development_set_user_independent)
-            print('models_user_independent', (map(lambda x: x.n_components, models_user_independent)))
+            print('models_user_independent', list(map(lambda x: x[0].n_components, models_user_independent)))
             print('hter_test_set_user_independent',hter_test_set_user_independent)
 
             print('Average eer development set user dependent: ', (sum(eer_development_set_user_dependent)/5),

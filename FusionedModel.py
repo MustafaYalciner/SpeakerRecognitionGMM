@@ -13,3 +13,7 @@ class FusionedModel:
         for i in range(len(scores)):
             scores[i] = foreground_scores[i]-background_scores[i]
         return scores
+
+
+    def get_n_components_of_background(self):
+        return self.background_model.n_components
