@@ -352,11 +352,11 @@ class Main: #first section
                 print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
 
             print('eer_development_set_user_dependent',eer_development_set_user_dependent)
-            print('models_user_dependent', map(lambda x: x.n_components, models_user_dependent))
+            print('models_user_dependent', list(map(lambda x: x.n_components, models_user_dependent)))
             print('hter_test_set_user_dependent',hter_test_set_user_dependent)
 
             print('eer_development_set_user_independent',eer_development_set_user_independent)
-            print('models_user_independent', map(lambda x: x.n_components, models_user_independent))
+            print('models_user_independent', (map(lambda x: x.n_components, models_user_independent)))
             print('hter_test_set_user_independent',hter_test_set_user_independent)
 
             print('Average eer development set user dependent: ', (sum(eer_development_set_user_dependent)/5),
