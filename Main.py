@@ -218,9 +218,6 @@ def second_section():
     best_foreground_models = [[None]*len(subjects)]*5
     ubm_models = [[None]*len(subjects)]*5
     merged_models = [[None]*len(subjects)]*5
-    ubm_best_component_no = 1
-    # Since we are using almost the whole dataset (except for the subject of interest s_i)
-    # it would probably not make a big difference if we used subject specific number of components.
     n_components_ubm = 1
     best_n_components_ubm = 1
     best_EER = 1
@@ -235,7 +232,7 @@ def second_section():
         for user_index in range(len(subjects)):
             best_foreground_models[experiment_count][user_index] = GaussianMixture(n_components=31)
             best_foreground_models[experiment_count][user_index].fit(subjectsSplit[0][user_index])
-        while n_components_ubm < 30:
+        while eer_increased_n_times < 3:
             for user_index in range(len(subjects)):
                 # train the ubm with the user specific noise
                 ubm_models[experiment_count][user_index] = GaussianMixture(n_components=n_components_ubm)
@@ -309,7 +306,7 @@ def find_optimum_components(subjectsSplit, subjects, thresholding_method):
 
 class Main: #first section
     if __name__ == '__main__':
-        first_section_done = True
+        first_section_done = False
         if first_section_done:
             second_section()
         else:
@@ -353,6 +350,14 @@ class Main: #first section
                 hter_test_set_user_independent[experiment_count] \
                     = hter_with_thold(models_user_independent[experiment_count],subjectsSplit[2],([thold_user_inde]*len(subjects)))
                 print('hter_test_set_user_independent', hter_test_set_user_independent[experiment_count])
+
+            print('eer_development_set_user_dependent',eer_development_set_user_dependent)
+            print('models_user_dependent', map(lambda x: x.n_components, models_user_dependent))
+            print('hter_test_set_user_dependent',hter_test_set_user_dependent)
+
+            print('eer_development_set_user_independent',eer_development_set_user_independent)
+            print('models_user_independent', map(lambda x: x.n_components, models_user_independent))
+            print('hter_test_set_user_independent',hter_test_set_user_independent)
 
             print('Average eer development set user dependent: ', (sum(eer_development_set_user_dependent)/5),
                   'Standard deviation: ', np.std(eer_development_set_user_dependent))
